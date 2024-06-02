@@ -3,8 +3,7 @@ FROM golang:1.22 as build
 WORKDIR /go/src/app
 COPY . /go/src/app
 
-# RUN go get -u && go mod tidy
-RUN CGO_ENABLED=0 go build -o /go/bin/app
+RUN CGO_ENABLED=0 go build -o /go/bin/app -buildvcs=false
 
 FROM gcr.io/distroless/static-debian12
 
