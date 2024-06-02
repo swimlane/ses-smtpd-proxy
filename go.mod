@@ -2,8 +2,6 @@ module code.crute.us/mcrute/ses-smtpd-proxy
 
 go 1.22
 
-toolchain go1.22.3
-
 require (
 	github.com/aws/aws-sdk-go v1.53.14
 	github.com/hashicorp/vault/api v1.14.0
