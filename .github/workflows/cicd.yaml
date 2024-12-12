@@ -22,7 +22,7 @@ jobs:
           predicate-quantifier: 'every'
           filters: |
             images:
-              - '**/version.txt'
+              - 'version.txt'
 
       - name: Verify Image Version Bump
         if: steps.filter.outputs.images != 'true'
