@@ -53,6 +53,18 @@ expected by Go's http.Server.
 Prometheus metric serving (though not metric aggregation) can be
 disabled by passing ``--disable-prometheus`` on the command line.
 
+## Health Check Integration
+
+A simple health check can be enabled by passing `--enable-health-check` 
+on the command line. A JSON response will be served on `:3000` at the 
+path `/health` by default. The bind address and port can be
+customized by passing `--health-check-bind=bind-string` in the format
+expected by Go's http.Server. A sample response:
+
+```json
+{ "name": "ses-smtp-proxy", "status": "ok", "version": "v1.3.0" }
+```
+
 ## Usage
 By default the command takes no arguments and will listen on port 2500 on all
 interfaces. The listen interfaces and port can be specified as the only
@@ -97,7 +109,12 @@ All code is reviewed before acceptance and changes may be requested to better
 follow the conventions of the existing API.
 
 ## Contributors
+This project is made possible by the contributions of the following
+individuals; listed here in the order they first contributed to the
+project.
+
 * Mike Crute (@mcrute)
 * Thomas Dupas (@thomasdupas)
 * Quentin Loos (@Kent1)
 * Moriyoshi Koizumi (@moriyoshi)
+* Jesse Mandel (@supergibbs)
