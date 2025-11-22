@@ -12,6 +12,12 @@ jobs:
       IMAGE_NAME: ses-smtpd-proxy
     steps:
 
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
       - name: Check out code
         uses: actions/checkout@v3
 
@@ -35,15 +41,18 @@ jobs:
           echo "SHORT_SHA=`echo ${GITHUB_SHA} | cut -c1-8`" >> $GITHUB_ENV
           echo "IMAGE_VERSION=$(cat version.txt)" >> $GITHUB_ENV
 
-      - name: Build image
-        run:  |  
-         docker build --no-cache -t ${IMAGE_NAME} -t localimage:localtag .
+      - name: Build and scan image
+        run:  |
+         echo "Build image"
+         docker buildx build --platform linux/amd64,linux/arm64 -t ${IMAGE_NAME} -t localimage:localtag .
+         echo "Load amd64 image"
+         docker buildx build --load --platform linux/amd64 -t ${IMAGE_NAME} -t localimage:localtag .
 
       - name: Publish to Quay on Master
         if: github.event.pull_request.merged == true
         run:  |
          docker login quay.io -u ${{ secrets.QUAY_USERNAME }} -p "${{ secrets.QUAY_PASSWORD }}"
-         docker tag ${IMAGE_NAME} quay.io/swimlane/${IMAGE_NAME}:${IMAGE_VERSION}
-         docker tag ${IMAGE_NAME} quay.io/swimlane/${IMAGE_NAME}:latest
-         docker push quay.io/swimlane/${IMAGE_NAME}:${IMAGE_VERSION}
-         docker push quay.io/swimlane/${IMAGE_NAME}:latest
+         docker buildx build --push --platform linux/amd64,linux/arm64 \
+                -t quay.io/swimlane/${IMAGE_NAME}:${IMAGE_VERSION} \
+                -t quay.io/swimlane/${IMAGE_NAME}:latest \
+                .
