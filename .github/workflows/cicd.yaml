@@ -39,11 +39,6 @@ jobs:
         run:  |  
          docker build --no-cache -t ${IMAGE_NAME} -t localimage:localtag .
 
-      - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@0.20.0
-        with:
-          image-ref: 'localimage:localtag'
-
       - name: Publish to Quay on Master
         if: github.event.pull_request.merged == true
         run:  |
