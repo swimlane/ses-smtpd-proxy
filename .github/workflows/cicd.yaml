@@ -44,9 +44,9 @@ jobs:
       - name: Build and scan image
         run:  |
          echo "Build image"
-         docker buildx build --platform linux/amd64,linux/arm64 -t ${IMAGE_NAME} -t localimage:localtag ./${IMAGE_NAME}
+         docker buildx build --platform linux/amd64,linux/arm64 -t ${IMAGE_NAME} -t localimage:localtag .
          echo "Load amd64 image"
-         docker buildx build --load --platform linux/amd64 -t ${IMAGE_NAME} -t localimage:localtag ./${IMAGE_NAME}
+         docker buildx build --load --platform linux/amd64 -t ${IMAGE_NAME} -t localimage:localtag .
 
       - name: Publish to Quay on Master
         if: github.event.pull_request.merged == true
@@ -55,4 +55,4 @@ jobs:
          docker buildx build --push --platform linux/amd64,linux/arm64 \
                 -t quay.io/swimlane/${IMAGE_NAME}:${IMAGE_VERSION} \
                 -t quay.io/swimlane/${IMAGE_NAME}:latest \
-                ./
+                .
