@@ -10,15 +10,13 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"code.crute.us/mcrute/ses-smtpd-proxy/smtpd"
+	"code.crute.us/mcrute/ses-smtpd-proxy/vault"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ses"
-	"github.com/hashicorp/vault/api"
-	"github.com/hashicorp/vault/api/auth/approle"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -46,16 +44,6 @@ var (
 		Namespace: "smtpd",
 		Name:      "ses_error_total",
 		Help:      "Total number errors with SES",
-	})
-	credentialRenewalSuccess = promauto.NewCounter(prometheus.CounterOpts{
-		Namespace: "smtpd",
-		Name:      "credential_renewal_success_total",
-		Help:      "Total number successful credential renewals",
-	})
-	credentialRenewalError = promauto.NewCounter(prometheus.CounterOpts{
-		Namespace: "smtpd",
-		Name:      "credential_renewal_error_total",
-		Help:      "Total number errors during credential renewal",
 	})
 )
 
@@ -118,104 +106,12 @@ func (e *Envelope) Close() error {
 	return err
 }
 
-func logRenewal(renewal *api.RenewOutput) {
-	canRenew := "renewable"
-	if !renewal.Secret.Renewable {
-		canRenew = "not renewable"
-	}
-	leaseID := renewal.Secret.LeaseID
-	if leaseID == "" && renewal.Secret.MountType == "token" {
-		leaseID = "vault_token"
-	}
-	log.Printf("Successfully renewed lease '%s' at %s for %s, %s",
-		leaseID,
-		renewal.RenewedAt.Format(time.RFC3339),
-		time.Duration(renewal.Secret.LeaseDuration)*time.Second,
-		canRenew,
-	)
-}
-
-func renewSecret(vc *api.Client, s *api.Secret, credentialError chan<- error) error {
-	w, err := vc.NewLifetimeWatcher(&api.LifetimeWatcherInput{Secret: s})
-	if err != nil {
-		return err
-	}
-	go w.Start()
-
-	go func() {
-		for {
-			select {
-			case err := <-w.DoneCh():
-				if err != nil {
-					credentialRenewalError.Inc()
-					credentialError <- err
-				}
-			case renewal := <-w.RenewCh():
-				credentialRenewalSuccess.Inc()
-				logRenewal(renewal)
-			}
-		}
-	}()
-
-	return nil
-}
-
-func getVaultSecret(ctx context.Context, path string, credentialError chan<- error) (credentials.Value, error) {
-	var r credentials.Value
-
-	vc, err := api.NewClient(api.DefaultConfig())
-	if err != nil {
-		return r, err
-	}
-
-	// Use AppRole if it's in the environment, otherwise assume VAULT_TOKEN
-	// was provided in the environment.
-	if roleID := os.Getenv("VAULT_APPROLE_ROLE_ID"); roleID != "" {
-		appRoleAuth, err := approle.NewAppRoleAuth(roleID, &approle.SecretID{
-			FromEnv: "VAULT_APPROLE_SECRET_ID",
-		})
-		if err != nil {
-			return r, fmt.Errorf("unable to initialize AppRole auth method: %w", err)
-		}
-		if loginSecret, err := vc.Auth().Login(ctx, appRoleAuth); err != nil {
-			return r, fmt.Errorf("unable to login to AppRole auth method: %w", err)
-		} else {
-			if err := renewSecret(vc, loginSecret, credentialError); err != nil {
-				return r, err
-			}
-		}
-	}
-
-	secret, err := vc.Logical().Read(path)
-	if err != nil {
-		return r, err
-	}
-	if secret == nil {
-		return r, fmt.Errorf("Vault returned no AWS secret")
-	}
-
-	keyId, ok := secret.Data["access_key"]
-	if !ok {
-		return r, fmt.Errorf("Vault secret had no access_key")
-	}
-
-	secretKey, ok := secret.Data["secret_key"]
-	if !ok {
-		return r, fmt.Errorf("Vault secret had no secret_key")
-	}
-
-	r.AccessKeyID = keyId.(string)
-	r.SecretAccessKey = secretKey.(string)
-
-	return r, renewSecret(vc, secret, credentialError)
-}
-
 func makeSesClient(ctx context.Context, enableVault bool, vaultPath string, credentialError chan<- error) (*ses.SES, error) {
 	var err error
 	var s *session.Session
 
 	if enableVault {
-		cred, err := getVaultSecret(ctx, vaultPath, credentialError)
+		cred, err := vault.GetVaultSecret(ctx, vaultPath, credentialError)
 		if err != nil {
 			return nil, err
 		}
@@ -245,12 +141,24 @@ func main() {
 	vaultPath := flag.String("vault-path", "", "Full path to Vault credential (ex: \"aws/creds/my-mail-user\")")
 	showVersion := flag.Bool("version", false, "Show program version")
 	configurationSetName := flag.String("configuration-set-name", "", "Configuration set name with which SendRawEmail will be invoked")
+	enableHealthCheck := flag.Bool("enable-health-check", false, "Enable health check server")
+	healthCheckBind := flag.String("health-check-bind", ":3000", "Address/port on which to bind health check server")
 
 	flag.Parse()
 
 	if *showVersion {
 		fmt.Printf("ses-smtp-proxy version %s\n", version)
 		return
+	}
+
+	if *enableHealthCheck {
+		sm := http.NewServeMux()
+		ps := &http.Server{Addr: *healthCheckBind, Handler: sm}
+		sm.Handle("/health", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Add("Content-Type", "application/json")
+			w.Write([]byte("{\"name\": \"ses-smtp-proxy\", \"status\": \"ok\", \"version\": \"" + version + "\"}"))
+		}))
+		go ps.ListenAndServe()
 	}
 
 	credentialError := make(chan error, 2)
