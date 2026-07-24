@@ -82,6 +82,7 @@ This server speaks plain unauthenticated SMTP (no TLS) so it's not suitable for
 use in an untrusted environment nor on the public internet. I don't have these
 use-cases but I would accept pull requests implementing these features if you
 do have the use-case and want to add them.
+Note: Published images are not build from this repository. Only prposed commits back to the upstream will belong here.
 
 ## Building
 To build the binary run `make ses-smtpd-proxy`.
